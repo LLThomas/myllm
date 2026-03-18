@@ -2,3 +2,5 @@ __pycache__/
 .pytest_cache/
 .pdm-python
 .codeartsdoer
+.vscode
+*.egg-info/

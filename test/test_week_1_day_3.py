@@ -185,7 +185,7 @@ def test_task_3_qwen2_grouped_query_attention_torch(
     max_seq_len = 64
     theta = 10000
 
-    from transformers.models.qwen2.modeling_qwen2 import Qwen2Attention, Qwen2Config
+    from transformers.models.qwen2.modeling_qwen2 import Qwen2Attention, Qwen2Config, Qwen2RotaryEmbedding
 
     config = Qwen2Config(
         hidden_size=hidden_size,
@@ -199,7 +199,7 @@ def test_task_3_qwen2_grouped_query_attention_torch(
         max_position_embeddings=max_seq_len,
     )
 
-    torch_attention = Qwen2Attention(config).to(device=device, dtype=precision)
+    torch_attention = Qwen2Attention(config, layer_idx=0).to(device=device, dtype=precision)
     torch_attention.eval()
 
     wq = torch_attention.q_proj.weight
@@ -238,24 +238,22 @@ def test_task_3_qwen2_grouped_query_attention_torch(
     with torch.no_grad():
         user_output = user_attention(x, mask=mask)
 
+        rotary_emb = Qwen2RotaryEmbedding(config).to(device=device, dtype=precision)
         position_ids = torch.arange(seq_len, device=device).unsqueeze(0)
-
+        position_embeddings = rotary_emb(x, position_ids)
+        causal_mask_4d = None
         if mask == "causal":
-            from transformers.models.qwen2.modeling_qwen2 import (
-                _prepare_4d_causal_attention_mask,
-            )
+            causal_mask_4d = torch.full((seq_len, seq_len), torch.finfo(precision).min, device=device)
+            causal_mask_4d = torch.triu(causal_mask_4d, diagonal=1)
+            causal_mask_4d = causal_mask_4d.view(1, 1, seq_len, seq_len)
 
-            causal_mask_4d = _prepare_4d_causal_attention_mask(
-                None, (batch_size, seq_len), x, 0
-            )
-        else:
-            causal_mask_4d = None
-
-        torch_output, _, _ = torch_attention(
-            x,
+        outputs = torch_attention(
+            hidden_states=x,
+            position_embeddings=position_embeddings,
             attention_mask=causal_mask_4d,
             position_ids=position_ids,
             use_cache=False,
         )
+        torch_output = outputs[0]
 
     assert_allclose(user_output, torch_output, precision=precision)

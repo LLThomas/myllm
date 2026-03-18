@@ -22,3 +22,7 @@ pythonpath = ["src"]
 filterwarnings = [
     "ignore::FutureWarning:huggingface_hub.*",
 ]
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

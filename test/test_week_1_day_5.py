@@ -1,10 +1,11 @@
+import inspect
 import pytest
 import torch
 import torch.nn.functional as F
 from my_llm import *
 from utils import *
 from transformers import AutoModelForCausalLM, AutoTokenizer, Qwen2Config
-from transformers.models.qwen2.modeling_qwen2 import Qwen2DecoderLayer
+from transformers.models.qwen2.modeling_qwen2 import Qwen2DecoderLayer, Qwen2RotaryEmbedding
 
 
 def qwen_model_exists(model_id):
@@ -107,11 +108,17 @@ def test_task_1_transformer_block():
                             .unsqueeze(0)
                             .unsqueeze(0)
                         )
+                    
+                    position_ids = torch.arange(seq_len, device=device).unsqueeze(0)
+                    rope = Qwen2RotaryEmbedding(config).to(device=device, dtype=precision)
+                    position_embeddings = rope(x, position_ids)
+
                     hf_output = hf_block(
                         x,
                         bo=bo_zeros,
                         attention_mask=hf_attention_mask,
-                        position_ids=torch.arange(seq_len, device=device).unsqueeze(0),
+                        position_ids=position_ids,
+                        position_embeddings=position_embeddings,
                     )[0]
 
                 assert_allclose(user_output, hf_output, precision)
@@ -194,14 +201,19 @@ def test_task_2_embedding_as_linear(device, precision):
         assert_allclose(user_output, ref_output, precision)
 
 
-def helper_test_task_3_improved(model_name: str, device: str, iters: int = 10):
+def helper_test_task_3(model_name: str, device: str, iters: int = 10):
     """
     Helper function for task 3 testing with improved structure
     """
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    hf_model = AutoModelForCausalLM.from_pretrained(model_name).to(device).eval()
+    
+    precision = torch.float32
+    hf_model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=precision).to(device).eval()
 
     model = Qwen2ModelWeek1(hf_model).to(device).eval()
+
+    sig = inspect.signature(model.forward)
+    needs_mask = "mask" in sig.parameters
 
     # Test multiple iterations
     for i in range(iters):
@@ -210,7 +222,16 @@ def helper_test_task_3_improved(model_name: str, device: str, iters: int = 10):
         )
 
         with torch.no_grad():
-            user_output = model(input_ids)
+            if needs_mask:
+                seq_len = input_ids.shape[1]
+                causal_mask = torch.triu(
+                    torch.full((seq_len, seq_len), float("-inf"), device=device, dtype=precision), 
+                    diagonal=1
+                ).unsqueeze(0).unsqueeze(0)
+                user_output = model(input_ids, mask=causal_mask)
+            else:
+                user_output = model(input_ids)
+
             user_output = user_output - torch.logsumexp(
                 user_output, dim=-1, keepdim=True
             )
@@ -229,4 +250,4 @@ def test_task_3_qwen_2_05b(device):
     """
     Test Qwen2 0.5B model
     """
-    helper_test_task_3_improved(MODEL_MAP["0.5B"], device, 5)
+    helper_test_task_3(MODEL_MAP["0.5B"], device, 5)
