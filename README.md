@@ -4,10 +4,20 @@
 
 ## Usage
 1. run inference
-pdm run main --solution myllm --loader week1 --model qwen2-0.5b --prompt "Give me a short introduction to large language model"
+```bash
+pdm run main \
+  --solution myllm \
+  --loader week1 \
+  --model qwen2-0.5b \
+  --prompt "Give me a short introduction to large language model"
+```
 
-2. run one case
+2. run one test case
+```bash
 pdm run pytest test/test_week_1_day_1.py::test_task_1_simple_attention
+```
 
 3. run all test cases
-pdm run pytest test/test_week_1_day_1.py -x 
+```bash
+pdm run pytest test/test_week_1_day_1.py -x
+```
