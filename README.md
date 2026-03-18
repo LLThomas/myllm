@@ -5,11 +5,7 @@
 ## Usage
 1. run inference
 ```bash
-pdm run main \
-  --solution myllm \
-  --loader week1 \
-  --model qwen2-0.5b \
-  --prompt "Give me a short introduction to large language model"
+pdm run main --solution myllm --loader week1 --model qwen2-0.5b --prompt "Give me a short introduction to large language model"
 ```
 
 2. run one test case
