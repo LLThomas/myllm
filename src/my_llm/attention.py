@@ -31,14 +31,14 @@ def scaled_dot_product_attention_simple(
         if isinstance(mask, str):
             assert mask == "causal"
             # causal mask shape: (L, S)
-            causal = causal_mask(L, S, query.dtype)
+            causal = causal_mask(L, S, query.dtype, device=query.device)
             scores = scores + causal
         else:
             scores = scores + mask
 
     # 4. softmax(Q · Kt / sqrt(d_k) + mask)
     # softmax over last dimension
-    attn_probs = torch.softmax(scores, dim=-1)
+    attn_probs = torch.softmax(scores.to(torch.float32), dim=-1).to(query.dtype)
 
     # 5. softmax(Q · Kt / sqrt(d_k) + mask) · V
     # weighted sum
@@ -99,19 +99,6 @@ class SimpleMultiHeadAttention:
         # 5. linear layer output
         # (BATCH_SIZE, L, H * D) · (H * D, H * D) -> (BATCH_SIZE, L, H * D)
         return attention_res @ self.wo.T
-
-
-# def causal_mask(
-#     L: int,
-#     S: int,
-#     dtype: torch.dtype,
-#     device: torch.device = None,
-# ) -> torch.Tensor:
-#     offset = S - L
-#     mask = torch.tril(torch.ones(L, S, device=device), diagonal=offset)
-#     res = torch.zeros((L, S), dtype=dtype, device=device)
-#     res = res.masked_fill(mask == 0, float("-inf"))
-#     return res
 
 
 def causal_mask(

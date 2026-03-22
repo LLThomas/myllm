@@ -8,14 +8,6 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, Qwen2Config
 from transformers.models.qwen2.modeling_qwen2 import Qwen2DecoderLayer, Qwen2RotaryEmbedding
 
 
-def qwen_model_exists(model_id):
-    try:
-        AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-        return True
-    except Exception:
-        return False
-
-
 MODEL_MAP = {
     "0.5B": "Qwen/Qwen2-0.5B-Instruct",
 }

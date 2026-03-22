@@ -60,11 +60,15 @@ class RoPE(nn.Module):
 
         # 1. get cached sin/cos val according to offset
         if offset is None:
-            cos = self.cos_cached[:seq_len].to(compute_dtype)
-            sin = self.sin_cached[:seq_len].to(compute_dtype)
+            start_pos = 0
+        elif isinstance(offset, int):
+            start_pos = offset
+        elif isinstance(offset, slice):
+            start_pos = offset.start if offset.start is not None else 0
         else:
-            cos = self.cos_cached[offset].to(compute_dtype)
-            sin = self.sin_cached[offset].to(compute_dtype)
+            start_pos = 0
+        cos = self.cos_cached[start_pos : start_pos + seq_len].to(compute_dtype)
+        sin = self.sin_cached[start_pos : start_pos + seq_len].to(compute_dtype)
 
         # 2. adjust cos/sin shape for (Broadcasting)
         # cos/sin: (L, D/2)

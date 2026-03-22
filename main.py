@@ -27,7 +27,7 @@ if args.solution == "myllm":
     from my_llm import (
         models,
         simple_generate,
-        # simple_generate_with_kv_cache,
+        simple_generate_with_kv_cache,
         # speculative_generate,
         sampler,
     )
@@ -65,7 +65,7 @@ if use_hf:
 else:
     if args.loader == "week1":
         print(f"Using week1 loader for {args.model}")
-        myllm_model = models.dispatch_model(args.model, hf_model, week=1)
+        myllm_model = models.dispatch_model(args.model, hf_model, week=1).to(device)
     elif args.loader == "week2":
         print(
             f"Using week2 loader with flash_attn={args.enable_flash_attn} "
@@ -73,7 +73,7 @@ else:
         )
         myllm_model = models.dispatch_model(
             args.model, hf_model, week=2, enable_flash_attn=args.enable_flash_attn
-        )
+        ).to(device)
         # if draft_hf_model is not None:
         #     print(f"Using draft model {args.draft_model}")
         #     draft_myllm_model = models.dispatch_model(
@@ -103,17 +103,17 @@ if not use_hf:
     )
     if args.loader == "week1":
         simple_generate(myllm_model, tokenizer, prompt, sampler=sampler_obj)
-    # elif args.loader == "week2":
-    #     if draft_myllm_model is not None:
-    #         speculative_generate(
-    #             draft_myllm_model,
-    #             myllm_model,
-    #             draft_tokenizer,
-    #             tokenizer,
-    #             prompt,
-    #         )
-    #     else:
-    #         simple_generate_with_kv_cache(myllm_model, tokenizer, prompt)
+    elif args.loader == "week2":
+        # if draft_myllm_model is not None:
+        #     speculative_generate(
+        #         draft_myllm_model,
+        #         myllm_model,
+        #         draft_tokenizer,
+        #         tokenizer,
+        #         prompt,
+        #     )
+        # else:
+        simple_generate_with_kv_cache(myllm_model, tokenizer, prompt, sampler=sampler_obj)
 else:
     input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
     with torch.no_grad():

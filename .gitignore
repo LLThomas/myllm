@@ -4,3 +4,5 @@ __pycache__/
 .codeartsdoer
 .vscode
 *.egg-info/
+.pdm.toml
+.venv/
