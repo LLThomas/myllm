@@ -94,7 +94,7 @@ def simple_generate_with_kv_cache(
     logits = model(prompt_tensor.unsqueeze(0), 0, cache)
 
     # Get first generated token
-    last_token_logits = logits[0, -1, :]
+    last_token_logits = logits[:, -1, :]
     next_token = sampler(last_token_logits).item()
     generated_tokens.append(next_token)
     print(tokenizer.decode([next_token]), end="", flush=True)
