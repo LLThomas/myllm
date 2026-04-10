@@ -1,7 +1,8 @@
+import math
 import torch
 import torch.nn as nn
 from utils import linear, silu
-from .attention import scaled_dot_product_attention_grouped
+from .attention import scaled_dot_product_attention_grouped, flash_attention
 from .layer_norm import RMSNorm
 from .positional_encoding import RoPE
 from .embedding import Embedding
@@ -43,6 +44,7 @@ class Qwen2MultiHeadAttention(nn.Module):
 
         self.rope = RoPE(self.head_dim, max_seq_len, theta)
         self.use_flash_attention = use_flash_attention
+        self.scale = 1.0 / math.sqrt(self.head_dim)
 
     def forward(
         self,
@@ -66,9 +68,18 @@ class Qwen2MultiHeadAttention(nn.Module):
 
         full_k, full_v, _, mask_out = cache.update_and_fetch(k, v, mask=mask)
 
-        attn_output = scaled_dot_product_attention_grouped(
-            q, full_k, full_v, None, mask=mask_out
-        )
+        if self.use_flash_attention:
+            attn_output = flash_attention(
+                q.to(torch.float32),
+                full_k.to(torch.float32),
+                full_v.to(torch.float32),
+                scale=self.scale,
+                mask=mask_out,
+            ).to(x.dtype)
+        else:
+            attn_output = scaled_dot_product_attention_grouped(
+                q, full_k, full_v, None, mask=mask_out
+            )
 
         attn_output = attn_output.transpose(1, 2).reshape(batch, seq_len, self.hidden_size)
         return quantized_linear(attn_output, self.wo)

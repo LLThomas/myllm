@@ -17,6 +17,10 @@ pdm run main --solution myllm --loader week1 --model qwen2-0.5b --prompt "Give m
 pdm run main --solution myllm --loader week2 --model qwen2-0.5b --prompt "Give me a short introduction to large language model"
 ```
 
+* with flash-attn
+```bash
+pdm run main --solution myllm --loader week2 --model qwen2-0.5b --enable-flash-attn --prompt "Give me a short introduction to large language model"
+```
 
 2. run one test case
 ```bash

@@ -6,3 +6,10 @@ __pycache__/
 *.egg-info/
 .pdm.toml
 .venv/
+build/
+dist/
+
+# C++ extension compiled outputs
+*.pyd
+*.so
+*.dll

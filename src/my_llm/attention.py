@@ -146,10 +146,48 @@ def scaled_dot_product_attention_grouped(
 
 
 def flash_attention(
-    query: torch.Tensor,
-    key: torch.Tensor,
-    value: torch.Tensor,
+    query: torch.Tensor,    # B, H_q, L, D
+    key: torch.Tensor,      # B, H_kv, S, D
+    value: torch.Tensor,    # B, H_kv, S, D
     scale: float | None = None,
-    mask: torch.Tensor | None = None,
+    mask: torch.Tensor | str | None = None,
 ) -> torch.Tensor:
-    pass
+
+    from extensions import flash_attention_forward
+
+    *B, H_q, L, D = query.shape
+    _, H_kv, S, _ = key.shape
+
+    if scale is None:
+        scale = 1.0 / math.sqrt(D)
+
+    if H_q % H_kv != 0:
+        raise ValueError(f"H_q ({H_q}) must be a multiple of H_kv ({H_kv})")
+
+    query_3d = query.reshape(-1, L, D).contiguous()
+    key_3d = key.reshape(-1, S, D).contiguous()
+    value_3d = value.reshape(-1, S, D).contiguous()
+
+    N = query_3d.shape[0]
+    is_causal = mask == "causal"
+    if is_causal:
+        mask_tensor = causal_mask(L, S, torch.float32, query.device)
+        mask_tensor = mask_tensor.unsqueeze(0).expand(N, L, S).contiguous()
+    elif mask is None:
+        mask_tensor = torch.zeros(N, L, S, dtype=torch.float32, device=query.device)
+    else:
+        # mask shape: (B, H_q, L, S) -> reshape to (N, L, S) where N = B * H_q
+        mask_tensor = mask.reshape(N, L, S).contiguous().to(torch.float32)
+
+    output = flash_attention_forward(
+        query_3d,
+        key_3d,
+        value_3d,
+        mask_tensor,
+        scale,
+        is_causal,
+        H_q,
+        H_kv,
+    )
+
+    return output.reshape(*B, H_q, L, D)

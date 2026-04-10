@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "torch>=2.0.0", "numpy>=2.0.0", "pybind11>=2.10.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "myllm"
 version = "0.1.0"
@@ -5,7 +9,7 @@ description = "Default template for PDM package"
 authors = [
     {name = "thomas"},
 ]
-dependencies = ["torch>=2.7.1", "transformers>=4.57.6", "numpy>=2.0.2"]
+dependencies = ["torch>=2.0.0", "transformers>=4.57.6", "numpy>=2.0.2"]
 requires-python = ">=3.9"
 readme = "README.md"
 license = {text = "MIT"}
