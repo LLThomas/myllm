@@ -79,6 +79,9 @@ def quantized_linear(
     w: QuantizedWeights,
     bias: torch.Tensor | None = None,
 ) -> torch.Tensor:
+    # Ensure x and w.weight have the same dtype
+    if x.dtype != w.weight.dtype:
+        x = x.to(w.weight.dtype)
     if bias is None:
         return torch.matmul(x, w.weight.T)
     return torch.matmul(x, w.weight.T) + bias

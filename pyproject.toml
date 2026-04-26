@@ -12,7 +12,7 @@ authors = [
 dependencies = ["torch>=2.0.0", "transformers>=4.57.6", "numpy>=2.0.2"]
 requires-python = ">=3.9"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 
 [tool.pdm]
 distribution = true
@@ -20,6 +20,7 @@ distribution = true
 [tool.pdm.scripts]
 test = "pytest"
 main.cmd = "python main.py"
+batch-main = "python batch-main.py"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

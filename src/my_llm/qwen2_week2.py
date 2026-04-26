@@ -7,7 +7,7 @@ from .layer_norm import RMSNorm
 from .positional_encoding import RoPE
 from .embedding import Embedding
 from .quantize import dequantize_linear, QuantizedWeights, quantized_linear
-from .kv_cache import TinyKvCache, TinyKvFullCache
+from .kv_cache import TinyKvCache, TinyKvFullCache, BatchingKvCache
 from typing import Any
 
 
@@ -49,7 +49,7 @@ class Qwen2MultiHeadAttention(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        offset: int,
+        offset: int | list[int] | torch.Tensor,
         cache: TinyKvCache,
         mask: torch.Tensor | str | None = None,
     ) -> torch.Tensor:
@@ -63,10 +63,21 @@ class Qwen2MultiHeadAttention(nn.Module):
         k = k.view(batch, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
         v = v.view(batch, seq_len, self.num_kv_heads, self.head_dim).transpose(1, 2)
 
-        q = self.rope(q, offset=offset)
-        k = self.rope(k, offset=offset)
+        if isinstance(offset, int):
+            offset_slice = [slice(offset, offset + seq_len)]
+        elif isinstance(offset, torch.Tensor):
+            offset_slice = [slice(int(i), int(i + seq_len)) for i in offset]
+        elif isinstance(offset, list):
+            offset_slice = [slice(int(i), int(i + seq_len)) for i in offset]
+        else:
+            offset_slice = offset
 
-        full_k, full_v, _, mask_out = cache.update_and_fetch(k, v, mask=mask)
+        q = self.rope(q, offset=offset_slice)
+        k = self.rope(k, offset=offset_slice)
+
+        full_k, full_v, _, mask_out = cache.update_and_fetch(
+            k, v, mask_length=seq_len, mask=mask
+        )
 
         if self.use_flash_attention:
             attn_output = flash_attention(
@@ -78,7 +89,7 @@ class Qwen2MultiHeadAttention(nn.Module):
             ).to(x.dtype)
         else:
             attn_output = scaled_dot_product_attention_grouped(
-                q, full_k, full_v, None, mask=mask_out
+                q, full_k, full_v, scale=self.scale, mask=mask_out
             )
 
         attn_output = attn_output.transpose(1, 2).reshape(batch, seq_len, self.hidden_size)
@@ -154,7 +165,7 @@ class Qwen2TransformerBlock(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
-        offset: int,
+        offset: int | list[int] | torch.Tensor,
         cache: TinyKvCache,
         mask: torch.Tensor | str | None = None,
     ) -> torch.Tensor:
@@ -174,6 +185,7 @@ class Qwen2ModelWeek2(nn.Module):
         self,
         model: Any,
         enable_flash_attn: bool = False,
+        precision: torch.dtype | None = None,
     ):
         super().__init__()
         config = model.config
@@ -182,7 +194,11 @@ class Qwen2ModelWeek2(nn.Module):
         self.hidden_size = config.hidden_size
         self.vocab_size = config.vocab_size
         self.tie_word_embeddings = config.tie_word_embeddings
-        precision = torch.float16
+
+        # Determine precision from model weights if not specified
+        if precision is None:
+            # Check the dtype of the model's embedding weights
+            precision = model.model.embed_tokens.weight.dtype
         self.precision = precision
 
         self.embed_tokens = Embedding(
@@ -242,12 +258,14 @@ class Qwen2ModelWeek2(nn.Module):
     def forward(
         self,
         inputs: torch.Tensor,
-        offset: int,
+        offset: int | list[int] | torch.Tensor,
         cache: list[TinyKvCache],
     ) -> torch.Tensor:
         x = self.embed_tokens(inputs)
+        L = inputs.shape[1]
 
-        mask = "causal" if inputs.shape[1] > 1 else None
+        is_batching = isinstance(cache[0], BatchingKvCache)
+        mask = "causal" if (L > 1 and not is_batching) else None
 
         for i, layer in enumerate(self.layers):
             x = layer(x, offset, cache[i], mask)

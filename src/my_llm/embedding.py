@@ -13,4 +13,7 @@ class Embedding(nn.Module):
         return self.embedding(x)
 
     def as_linear(self, x: torch.tensor) -> torch.tensor:
+        # Ensure x and weight have the same dtype
+        if x.dtype != self.embedding.weight.dtype:
+            x = x.to(self.embedding.weight.dtype)
         return F.linear(x, self.embedding.weight)

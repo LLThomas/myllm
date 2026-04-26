@@ -38,7 +38,11 @@ def scaled_dot_product_attention_simple(
 
     # 4. softmax(Q · Kt / sqrt(d_k) + mask)
     # softmax over last dimension
-    attn_probs = torch.softmax(scores.to(torch.float32), dim=-1).to(query.dtype)
+    scores_float = scores.to(torch.float32)
+    # Handle all-masked rows: when entire row is -inf, softmax produces NaN
+    # Replace NaN with zeros for those rows (inactive slots in batching)
+    attn_probs = torch.softmax(scores_float, dim=-1)
+    attn_probs = torch.nan_to_num(attn_probs, nan=0.0).to(query.dtype)
 
     # 5. softmax(Q · Kt / sqrt(d_k) + mask) · V
     # weighted sum
@@ -107,6 +111,32 @@ def causal_mask(
     dtype: torch.dtype,
     device: torch.device = None,
 ) -> torch.Tensor:
+    """
+    Generate causal attention mask.
+
+    For query position i and key position j:
+    - If j <= i: mask[i, j] = 0 (can attend)
+    - If j > i: mask[i, j] = -inf (cannot attend)
+
+    This allows each query position to attend to all positions up to and including itself.
+
+    Args:
+        L: Query sequence length
+        S: Key sequence length
+        dtype: Output dtype
+        device: Output device
+
+    Returns:
+        Mask tensor of shape (L, S) with 0 for valid positions and -inf for masked positions
+    """
+    # Create mask where positions j > i are masked
+    # For decode (L=1), we want to see all S positions, so no masking needed
+    if L == 1:
+        # Decode: single query can see all cached keys
+        return torch.zeros((1, S), dtype=dtype, device=device)
+
+    # For prefill: create proper causal mask
+    # Position i can see positions 0..i (inclusive)
     mask = torch.triu(torch.ones(L, S, device=device), diagonal=1)
     res = torch.zeros((L, S), dtype=dtype, device=device)
     res = res.masked_fill(mask == 1, float("-inf"))
@@ -176,8 +206,13 @@ def flash_attention(
     elif mask is None:
         mask_tensor = torch.zeros(N, L, S, dtype=torch.float32, device=query.device)
     else:
-        # mask shape: (B, H_q, L, S) -> reshape to (N, L, S) where N = B * H_q
+        # mask shape is (B, 1, L, S) from BatchingKvCache
+        # Need to expand to (B, H_q, L, S) then reshape to (N, L, S)
+        if mask.shape[1] == 1:
+            mask = mask.expand(*B, H_q, L, S)
         mask_tensor = mask.reshape(N, L, S).contiguous().to(torch.float32)
+        # For tensor mask, is_causal should be False - mask already encodes causality
+        is_causal = False
 
     output = flash_attention_forward(
         query_3d,

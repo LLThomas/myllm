@@ -23,7 +23,6 @@ torch::Tensor flash_attention_cpu(
     const int64_t N = q.size(0);        // batch * num_heads
     const int64_t L = q.size(1);        // query sequence length
     const int64_t E = q.size(2);        // head dimension
-    const int64_t N_KV = k.size(0);     // batch * num_kv_heads
     const int64_t S = k.size(1);        // key/value sequence length
 
     const int64_t Br = 32;
@@ -64,13 +63,14 @@ torch::Tensor flash_attention_cpu(
             std::vector<float> l_i(Br, 0.0f);
             std::vector<float> m_i(Br, -std::numeric_limits<float>::infinity());
 
-            const int64_t causal_offset = S - L;
-
             for (int64_t j = 0; j < Tc; j++) {
                 int64_t row_max = i * Br + br_upper_bound - 1;
                 int64_t col_min = j * Bc;
 
-                if (is_causal && col_min > row_max + causal_offset) {
+                // For decode (L=1), we don't need causal skip
+                // For prefill, mask handles causality
+                // Skip blocks that are entirely masked for efficiency
+                if (is_causal && L > 1 && col_min > row_max) {
                     continue;
                 }
 
@@ -101,7 +101,9 @@ torch::Tensor flash_attention_cpu(
 
                 int64_t row_min = i * Br;
                 int64_t col_max = j * Bc + bc_upper_bound - 1;
-                bool block_all_valid = is_causal && (col_max <= row_min + causal_offset);
+                // For decode (L=1), all positions are valid (mask handles causality)
+                // For prefill with causal, check if entire block is valid
+                bool block_all_valid = is_causal && (L == 1 || col_max <= row_min);
 
                 for (int64_t a = 0; a < br_upper_bound; a++) {
                     for (int64_t b = 0; b < bc_upper_bound; b++) {
@@ -119,6 +121,11 @@ torch::Tensor flash_attention_cpu(
                     float rowmax = -std::numeric_limits<float>::infinity();
                     for (int64_t b = 0; b < bc_upper_bound; b++) {
                         rowmax = std::max(rowmax, s_i[a * Bc + b]);
+                    }
+                    // Handle the case where all positions are -inf (completely masked)
+                    // This can happen for inactive slots in batched KV cache
+                    if (rowmax == -std::numeric_limits<float>::infinity()) {
+                        rowmax = 0.0f;  // Default to avoid NaN in exp
                     }
                     float new_max = std::max(m_i[a], rowmax);
                     m_i_diff[a] = m_i[a] - new_max;
@@ -153,7 +160,13 @@ torch::Tensor flash_attention_cpu(
 
             for (int64_t a = 0; a < br_upper_bound; a++) {
                 for (int64_t b = 0; b < E; b++) {
-                    o_i[a * E + b] /= l_i[a];
+                    // Handle division by zero: when l_i[a] == 0, the row was completely masked
+                    // (inactive slot in BatchingKvCache). Output stays 0 (no valid keys to attend)
+                    if (l_i[a] > 0.0f) {
+                        o_i[a * E + b] /= l_i[a];
+                    } else {
+                        o_i[a * E + b] = 0.0f;
+                    }
                 }
             }
 

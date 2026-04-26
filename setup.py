@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 import torch
 import os
 import sys
@@ -47,6 +47,9 @@ ext_modules = [
 setup(
     name="myllm",
     version="0.1.0",
+    # src 布局: 指定包目录和发现规则
+    package_dir={"": "src"},
+    packages=find_packages(where="src"),
     ext_modules=ext_modules,
     cmdclass={"build_ext": cpp_extension.BuildExtension},
     zip_safe=False,
